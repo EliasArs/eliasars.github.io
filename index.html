@@ -126,6 +126,19 @@
 
   .del-pari{ color: var(--muted); font-size:16px; padding: 2px 6px; }
 
+  .group-count{
+    display:inline-block; margin-left:6px; font-size:11px; color: var(--amber);
+    font-family: var(--font-num); cursor:pointer;
+  }
+  .avg-tag{
+    display:inline-block; margin-left:5px; font-size:9px; color: var(--muted);
+    font-family: var(--font-ui); vertical-align: middle;
+  }
+  tr.detail-row td{
+    color: var(--muted); font-size:12px; background: var(--surface-2);
+    border-bottom:1px solid var(--border);
+  }
+
   .add-pari-form{
     display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:14px;
   }
@@ -217,6 +230,8 @@
   /** @type {Projet[]} */
   let projets = [];
   let openProjectId = null;
+  // Clés "projetId|selectionKey" des groupes actuellement dépliés (état d'affichage, non persisté)
+  let openGroups = new Set();
 
   function uid(){ return Math.random().toString(36).slice(2,10); }
   function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -243,29 +258,58 @@
     return p.paris.reduce((s, b) => s + b.montant, 0);
   }
 
-  // Gain si CE pari est le gagnant et tous les autres du même projet sont perdus.
-  function gainPotentiel(pari){
-    if (!pari.quote) return 0;
-    return pari.montant * (100 / pari.quote - 1);
+  function selectionKey(s){
+    return s.trim().toLowerCase();
+  }
+
+  // Regroupe les paris d'un même projet par sélection (nom identique, insensible à la casse).
+  // La quote affichée est une moyenne pondérée par la mise de chaque pari sur cette sélection.
+  // Hypothèse : la moyenne pondérée par la mise reflète mieux le "prix de revient" de la position
+  // qu'une simple moyenne arithmétique des quotes. À valider si ce n'est pas ce que tu veux.
+  function aggregateBySelection(paris){
+    const groups = {};
+    paris.forEach(b => {
+      const key = selectionKey(b.selection);
+      if (!groups[key]){
+        groups[key] = { key, label: b.selection.trim(), montantTotal: 0, quoteSum: 0, paris: [] };
+      }
+      groups[key].montantTotal += b.montant;
+      groups[key].quoteSum += b.montant * b.quote;
+      groups[key].paris.push(b);
+    });
+    return Object.values(groups).map(g => ({
+      key: g.key,
+      label: g.label,
+      montantTotal: g.montantTotal,
+      quoteMoyenne: g.montantTotal > 0 ? g.quoteSum / g.montantTotal : 0,
+      paris: g.paris.slice().sort((a,b) => a.date.localeCompare(b.date))
+    }));
+  }
+
+  // Gain net SI cette sélection gagne et que toutes les autres sélections du projet perdent.
+  function gainNetSiGagnant(group, miseTotaleProjet){
+    if (!group.quoteMoyenne) return -miseTotaleProjet;
+    const gainBrut = group.montantTotal * (100 / group.quoteMoyenne - 1);
+    return gainBrut - (miseTotaleProjet - group.montantTotal);
   }
 
   function resultatProjet(p){
-    // returns {gain, gainNet, rentabilite} or null if not resolved
+    // returns {gainNet, rentabilite} or null if not resolved
     if (p.statut !== "resolu") return null;
     const total = miseTotale(p);
     if (p.pariGagnantId === "NONE" || !p.pariGagnantId){
-      return { gain: 0, gainNet: -total, rentabilite: total > 0 ? -1 : 0 };
+      return { gainNet: -total, rentabilite: total > 0 ? -1 : 0 };
     }
-    const gagnant = p.paris.find(b => b.id === p.pariGagnantId);
-    if (!gagnant) return { gain: 0, gainNet: -total, rentabilite: total > 0 ? -1 : 0 };
-    const gain = gainPotentiel(gagnant);
-    const gainNet = gain - (total - gagnant.montant);
+    const groups = aggregateBySelection(p.paris);
+    const gagnant = groups.find(g => g.key === p.pariGagnantId);
+    if (!gagnant) return { gainNet: -total, rentabilite: total > 0 ? -1 : 0 };
+    const gainNet = gainNetSiGagnant(gagnant, total);
     const rentabilite = total > 0 ? gainNet / total : 0;
-    return { gain, gainNet, rentabilite };
+    return { gainNet, rentabilite };
   }
 
-  function fmtEUR(n){
-    return n.toLocaleString("fr-FR", { style:"currency", currency:"EUR", maximumFractionDigits: 2 });
+  function fmtUSD(n){
+    return n.toLocaleString("en-US", { style:"currency", currency:"USD", maximumFractionDigits: 2 });
   }
   function fmtPct(n){
     const sign = n > 0 ? "+" : "";
@@ -310,11 +354,11 @@
     summary.innerHTML = `
       <div class="cell">
         <div class="label">Engagé</div>
-        <div class="value">${fmtEUR(totalEngage)}</div>
+        <div class="value">${fmtUSD(totalEngage)}</div>
       </div>
       <div class="cell">
         <div class="label">Gain net réalisé</div>
-        <div class="value" style="color:${totalGainNet > 0 ? 'var(--green)' : (totalGainNet < 0 ? 'var(--red)' : 'var(--text)')}">${fmtEUR(totalGainNet)}</div>
+        <div class="value" style="color:${totalGainNet > 0 ? 'var(--green)' : (totalGainNet < 0 ? 'var(--red)' : 'var(--text)')}">${fmtUSD(totalGainNet)}</div>
       </div>
       <div class="cell">
         <div class="label">Rentabilité</div>
@@ -345,7 +389,7 @@
         <div class="project-head" data-toggle="${p.id}">
           <div>
             <div class="name">${escapeHtml(p.nom)}</div>
-            <div class="meta">${p.paris.length} pari${p.paris.length>1?'s':''} · ${fmtEUR(total)} engagé</div>
+            <div class="meta">${p.paris.length} pari${p.paris.length>1?'s':''} · ${fmtUSD(total)} engagé</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
             ${badge}
@@ -369,21 +413,27 @@
     if (p.paris.length === 0){
       return `<div style="color:var(--muted);font-size:13px;padding:10px 0;">Aucun pari ajouté pour l'instant.</div>`;
     }
-    const rows = p.paris.map(b => {
+    const total = miseTotale(p);
+    const groups = aggregateBySelection(p.paris);
+
+    const rows = groups.map(g => {
       let rowClass = "";
       if (p.statut === "resolu"){
-        if (p.pariGagnantId === b.id) rowClass = "winner";
-        else rowClass = "loser";
+        rowClass = (p.pariGagnantId === g.key) ? "winner" : "loser";
       }
+      const isOpen = openGroups.has(p.id + "|" + g.key);
+      const gainNet = gainNetSiGagnant(g, total);
+      const detail = g.paris.length > 1 ? renderGroupDetail(p, g) : "";
+      const nbLabel = g.paris.length > 1 ? `<span class="group-count" data-group-toggle="${p.id}|${g.key}">${g.paris.length} paris ▾</span>` : "";
       return `
         <tr class="${rowClass}">
-          <td>${escapeHtml(b.selection)}</td>
-          <td>${formatDateFR(b.date)}</td>
-          <td class="num">${fmtEUR(b.montant)}</td>
-          <td class="num">${b.quote}%</td>
-          <td class="num">${fmtEUR(gainPotentiel(b))}</td>
-          ${p.statut === "en_cours" ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${b.id}">✕</span></td>` : "<td></td>"}
+          <td>${escapeHtml(g.label)} ${nbLabel}</td>
+          <td class="num">${fmtUSD(g.montantTotal)}</td>
+          <td class="num">${g.quoteMoyenne.toFixed(1)}%${g.paris.length > 1 ? '<span class="avg-tag">moy.</span>' : ''}</td>
+          <td class="num">${fmtUSD(gainNet)}</td>
+          ${p.statut === "en_cours" && g.paris.length === 1 ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${g.paris[0].id}">✕</span></td>` : "<td></td>"}
         </tr>
+        ${isOpen ? detail : ""}
       `;
     }).join("");
 
@@ -392,16 +442,27 @@
         <thead>
           <tr>
             <th>Sélection</th>
-            <th>Date</th>
-            <th style="text-align:right;">Mise</th>
+            <th style="text-align:right;">Mise totale</th>
             <th style="text-align:right;">Quote</th>
-            <th style="text-align:right;">Gain si gagnant</th>
+            <th style="text-align:right;">Gain net si gagnant</th>
             <th></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     `;
+  }
+
+  function renderGroupDetail(p, g){
+    const lines = g.paris.map(b => `
+      <tr class="detail-row">
+        <td colspan="2">${formatDateFR(b.date)}</td>
+        <td class="num">${fmtUSD(b.montant)}</td>
+        <td class="num">${b.quote}%</td>
+        ${p.statut === "en_cours" ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${b.id}">✕</span></td>` : "<td></td>"}
+      </tr>
+    `).join("");
+    return lines;
   }
 
   function renderAddPariForm(p){
@@ -416,7 +477,7 @@
           <input type="date" name="date" value="${todayISO()}" required />
         </div>
         <div>
-          <label>Montant (€)</label>
+          <label>Montant ($)</label>
           <input type="number" name="montant" step="0.01" min="0" placeholder="50" required />
         </div>
         <div>
@@ -432,8 +493,9 @@
 
   function renderResolveBlock(p){
     if (p.paris.length === 0) return "";
-    const options = p.paris.map(b =>
-      `<button data-resolve="${p.id}|${b.id}">${escapeHtml(b.selection)} a gagné</button>`
+    const groups = aggregateBySelection(p.paris);
+    const options = groups.map(g =>
+      `<button data-resolve="${p.id}|${g.key}">${escapeHtml(g.label)} a gagné</button>`
     ).join("");
     return `
       <div class="resolve-block">
@@ -453,7 +515,7 @@
       <div class="result-summary">
         <div>
           <div class="label">Gain net</div>
-          <div class="value ${gainNetClass}">${fmtEUR(result.gainNet)}</div>
+          <div class="value ${gainNetClass}">${fmtUSD(result.gainNet)}</div>
         </div>
         <div>
           <div class="label">Rentabilité</div>
@@ -481,6 +543,16 @@
       el.addEventListener("click", () => {
         const id = el.getAttribute("data-toggle");
         openProjectId = (openProjectId === id) ? null : id;
+        render();
+      });
+    });
+
+    document.querySelectorAll("[data-group-toggle]").forEach(el => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const key = el.getAttribute("data-group-toggle");
+        if (openGroups.has(key)) openGroups.delete(key);
+        else openGroups.add(key);
         render();
       });
     });
