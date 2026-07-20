@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Paris Polymarket</title>
+
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0B0D10" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Paris" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+
+<style>
+  :root{
+    --bg: #0B0D10;
+    --surface: #14171C;
+    --surface-2: #1B1F26;
+    --border: #262B33;
+    --text: #E8EAED;
+    --muted: #8A919E;
+    --amber: #F5B942;
+    --green: #3DDC84;
+    --red: #FF5D5D;
+    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --font-num: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
+  }
+
+  header{
+    position: sticky; top:0; z-index: 10;
+    background: rgba(11,13,16,0.92);
+    backdrop-filter: blur(10px);
+    padding: calc(env(safe-area-inset-top) + 14px) 18px 14px;
+    border-bottom: 1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  header h1{
+    font-size: 17px; font-weight: 600; margin:0; letter-spacing: -0.01em;
+  }
+  header .sub{
+    font-family: var(--font-num);
+    font-size: 12px; color: var(--muted); margin-top:2px;
+  }
+  .add-btn{
+    width: 34px; height:34px; border-radius: 10px;
+    background: var(--amber); color:#1a1200; border:none;
+    font-size: 20px; line-height:1; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .add-btn:active{ transform: scale(0.94); }
+
+  main{ padding: 16px; max-width: 640px; margin: 0 auto; }
+
+  .summary{
+    display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;
+    margin-bottom:18px;
+  }
+  .summary .cell{
+    background: var(--surface); border:1px solid var(--border);
+    border-radius: 12px; padding: 12px;
+  }
+  .summary .label{ font-size:11px; color: var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .summary .value{ font-family: var(--font-num); font-size:17px; margin-top:4px; font-weight:600; }
+
+  .empty{
+    text-align:center; padding: 60px 20px; color: var(--muted);
+  }
+  .empty .glyph{ font-size: 32px; margin-bottom:10px; }
+  .empty button{
+    margin-top:16px; background: var(--surface-2); color: var(--text);
+    border:1px solid var(--border); padding:10px 18px; border-radius:10px; font-size:14px;
+  }
+
+  .project{
+    background: var(--surface); border:1px solid var(--border);
+    border-radius: 14px; margin-bottom: 12px; overflow:hidden;
+  }
+  .project-head{
+    padding: 14px 16px; display:flex; align-items:center; justify-content:space-between; gap: 10px;
+  }
+  .project-head .name{ font-weight:600; font-size:15px; }
+  .project-head .meta{ font-family: var(--font-num); font-size:12px; color:var(--muted); margin-top:3px; }
+  .badge{
+    font-size: 11px; font-weight:600; padding: 4px 9px; border-radius: 999px;
+    font-family: var(--font-num); white-space:nowrap;
+  }
+  .badge.encours{ background: rgba(245,185,66,0.14); color: var(--amber); }
+  .badge.gagne{ background: rgba(61,220,132,0.14); color: var(--green); }
+  .badge.perdu{ background: rgba(255,93,93,0.14); color: var(--red); }
+
+  .stakebar{
+    display:flex; height:6px; margin: 0 16px 14px; border-radius: 4px; overflow:hidden;
+    background: var(--surface-2);
+  }
+  .stakebar div{ height:100%; }
+
+  .project-body{ border-top:1px solid var(--border); padding: 4px 16px 16px; display:none; }
+  .project.open .project-body{ display:block; }
+  .project.open .chevron{ transform: rotate(180deg); }
+  .chevron{ color: var(--muted); transition: transform .15s; font-size:12px; }
+
+  table{ width:100%; border-collapse: collapse; margin-top:10px; }
+  th{
+    font-size: 10px; text-transform:uppercase; letter-spacing:.03em; color: var(--muted);
+    text-align:left; font-weight:600; padding: 6px 4px; border-bottom:1px solid var(--border);
+  }
+  td{
+    font-family: var(--font-num); font-size: 13px; padding: 8px 4px;
+    border-bottom:1px solid var(--border); vertical-align: middle;
+  }
+  td.num{ text-align:right; }
+  tr.winner td{ color: var(--green); }
+  tr.loser td{ opacity: 0.45; }
+
+  .del-pari{ color: var(--muted); font-size:16px; padding: 2px 6px; }
+
+  .add-pari-form{
+    display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:14px;
+  }
+  .add-pari-form label{ font-size:11px; color: var(--muted); display:block; margin-bottom:4px; }
+  .add-pari-form input, .add-pari-form select, input[type=text].proj-name{
+    width:100%; background: var(--surface-2); border:1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 9px 10px; font-size:14px;
+    font-family: var(--font-ui);
+  }
+  .add-pari-form .full{ grid-column: 1 / -1; }
+  .btn{
+    border:none; border-radius:10px; padding: 10px 14px; font-size:14px; font-weight:600;
+  }
+  .btn-primary{ background: var(--amber); color:#1a1200; }
+  .btn-ghost{ background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .row-actions{ display:flex; gap:8px; margin-top:10px; }
+
+  .resolve-block{
+    margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border);
+  }
+  .resolve-block .title{ font-size:12px; color: var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.03em; }
+  .resolve-options{ display:flex; flex-wrap:wrap; gap:8px; }
+  .resolve-options button{
+    background: var(--surface-2); border:1px solid var(--border); color: var(--text);
+    border-radius: 999px; padding: 7px 13px; font-size: 13px;
+  }
+  .resolve-options button.none-option{ color: var(--red); }
+
+  .result-summary{
+    margin-top:14px; background: var(--surface-2); border-radius:10px; padding:12px;
+    display:grid; grid-template-columns: 1fr 1fr; gap:10px;
+  }
+  .result-summary .label{ font-size:11px; color:var(--muted); }
+  .result-summary .value{ font-family: var(--font-num); font-size:16px; font-weight:700; margin-top:2px; }
+  .value.pos{ color: var(--green); }
+  .value.neg{ color: var(--red); }
+
+  .reopen{ margin-top:10px; }
+
+  dialog{
+    border:none; border-radius: 16px; background: var(--surface); color: var(--text);
+    padding: 20px; width: min(90vw, 380px); font-family: var(--font-ui);
+  }
+  dialog::backdrop{ background: rgba(0,0,0,0.5); }
+  dialog h3{ margin:0 0 14px; font-size:16px; }
+  dialog .actions{ display:flex; gap:10px; margin-top:16px; }
+  dialog .actions button{ flex:1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Paris</h1>
+    <div class="sub" id="header-sub">0 projet</div>
+  </div>
+  <button class="add-btn" id="open-add-project">+</button>
+</header>
+
+<main>
+  <div class="summary" id="summary"></div>
+  <div id="project-list"></div>
+  <div class="empty" id="empty-state" style="display:none;">
+    <div class="glyph">◇</div>
+    <div>Aucun projet pour l'instant.</div>
+    <button id="empty-add-btn">Créer un projet</button>
+  </div>
+</main>
+
+<dialog id="dialog-project">
+  <h3>Nouveau projet</h3>
+  <label style="font-size:11px;color:var(--muted);">Nom du projet</label>
+  <input class="proj-name" id="new-project-name" type="text" placeholder="Ex. Vainqueur Coupe du monde" />
+  <div class="actions">
+    <button class="btn btn-ghost" id="cancel-project">Annuler</button>
+    <button class="btn btn-primary" id="confirm-project">Créer</button>
+  </div>
+</dialog>
+
+<script>
+(function(){
+  "use strict";
+
+  const STORAGE_KEY = "paris_projets_v1";
+
+  /** @typedef {{id:string, selection:string, date:string, montant:number, quote:number}} Pari */
+  /** @typedef {{id:string, nom:string, paris:Pari[], statut:'en_cours'|'resolu', pariGagnantId:string|null}} Projet */
+
+  /** @type {Projet[]} */
+  let projets = [];
+  let openProjectId = null;
+
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+  function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      projets = raw ? JSON.parse(raw) : [];
+    }catch(e){
+      console.error("Lecture des données impossible", e);
+      projets = [];
+    }
+  }
+  function save(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(projets));
+    }catch(e){
+      console.error("Sauvegarde impossible", e);
+      alert("Impossible de sauvegarder les données sur cet appareil.");
+    }
+  }
+
+  function miseTotale(p){
+    return p.paris.reduce((s, b) => s + b.montant, 0);
+  }
+
+  // Gain si CE pari est le gagnant et tous les autres du même projet sont perdus.
+  function gainPotentiel(pari){
+    if (!pari.quote) return 0;
+    return pari.montant * (100 / pari.quote - 1);
+  }
+
+  function resultatProjet(p){
+    // returns {gain, gainNet, rentabilite} or null if not resolved
+    if (p.statut !== "resolu") return null;
+    const total = miseTotale(p);
+    if (p.pariGagnantId === "NONE" || !p.pariGagnantId){
+      return { gain: 0, gainNet: -total, rentabilite: total > 0 ? -1 : 0 };
+    }
+    const gagnant = p.paris.find(b => b.id === p.pariGagnantId);
+    if (!gagnant) return { gain: 0, gainNet: -total, rentabilite: total > 0 ? -1 : 0 };
+    const gain = gainPotentiel(gagnant);
+    const gainNet = gain - (total - gagnant.montant);
+    const rentabilite = total > 0 ? gainNet / total : 0;
+    return { gain, gainNet, rentabilite };
+  }
+
+  function fmtEUR(n){
+    return n.toLocaleString("fr-FR", { style:"currency", currency:"EUR", maximumFractionDigits: 2 });
+  }
+  function fmtPct(n){
+    const sign = n > 0 ? "+" : "";
+    return sign + (n*100).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " %";
+  }
+
+  const STAKE_COLORS = ["#F5B942", "#3DDC84", "#7C9EFF", "#FF5D5D", "#C084FC", "#4FD1C5"];
+
+  function render(){
+    const list = document.getElementById("project-list");
+    const empty = document.getElementById("empty-state");
+    const headerSub = document.getElementById("header-sub");
+
+    headerSub.textContent = projets.length + (projets.length > 1 ? " projets" : " projet");
+
+    if (projets.length === 0){
+      list.innerHTML = "";
+      empty.style.display = "block";
+    } else {
+      empty.style.display = "none";
+      list.innerHTML = projets.map(renderProject).join("");
+    }
+
+    renderSummary();
+    attachProjectEvents();
+  }
+
+  function renderSummary(){
+    const summary = document.getElementById("summary");
+    let totalEngage = 0, totalGainNet = 0, totalMiseResolue = 0;
+    projets.forEach(p => {
+      const total = miseTotale(p);
+      if (p.statut === "en_cours") totalEngage += total;
+      else {
+        const r = resultatProjet(p);
+        totalGainNet += r.gainNet;
+        totalMiseResolue += total;
+      }
+    });
+    const rentGlobale = totalMiseResolue > 0 ? totalGainNet / totalMiseResolue : null;
+
+    summary.innerHTML = `
+      <div class="cell">
+        <div class="label">Engagé</div>
+        <div class="value">${fmtEUR(totalEngage)}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Gain net réalisé</div>
+        <div class="value" style="color:${totalGainNet > 0 ? 'var(--green)' : (totalGainNet < 0 ? 'var(--red)' : 'var(--text)')}">${fmtEUR(totalGainNet)}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Rentabilité</div>
+        <div class="value" style="color:${rentGlobale === null ? 'var(--muted)' : (rentGlobale > 0 ? 'var(--green)' : (rentGlobale < 0 ? 'var(--red)' : 'var(--text)'))}">${rentGlobale === null ? '—' : fmtPct(rentGlobale)}</div>
+      </div>
+    `;
+  }
+
+  function renderProject(p){
+    const total = miseTotale(p);
+    const isOpen = p.id === openProjectId;
+    const result = resultatProjet(p);
+
+    let badge;
+    if (p.statut === "en_cours") badge = `<span class="badge encours">En cours</span>`;
+    else if (result.gainNet > 0) badge = `<span class="badge gagne">Gagné</span>`;
+    else badge = `<span class="badge perdu">Perdu</span>`;
+
+    // stake bar
+    const stakebar = total > 0 ? `<div class="stakebar">` + p.paris.map((b,i) => {
+      const pct = (b.montant / total) * 100;
+      const color = STAKE_COLORS[i % STAKE_COLORS.length];
+      return `<div style="width:${pct}%;background:${color};"></div>`;
+    }).join("") + `</div>` : "";
+
+    return `
+      <div class="project ${isOpen ? 'open' : ''}" data-id="${p.id}">
+        <div class="project-head" data-toggle="${p.id}">
+          <div>
+            <div class="name">${escapeHtml(p.nom)}</div>
+            <div class="meta">${p.paris.length} pari${p.paris.length>1?'s':''} · ${fmtEUR(total)} engagé</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${badge}
+            <span class="chevron">▾</span>
+          </div>
+        </div>
+        ${stakebar}
+        <div class="project-body">
+          ${renderParisTable(p)}
+          ${p.statut === "en_cours" ? renderAddPariForm(p) : ""}
+          ${p.statut === "en_cours" ? renderResolveBlock(p) : renderResultSummary(p, result)}
+          <div class="row-actions">
+            <button class="btn btn-ghost del-project" data-del-project="${p.id}">Supprimer le projet</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderParisTable(p){
+    if (p.paris.length === 0){
+      return `<div style="color:var(--muted);font-size:13px;padding:10px 0;">Aucun pari ajouté pour l'instant.</div>`;
+    }
+    const rows = p.paris.map(b => {
+      let rowClass = "";
+      if (p.statut === "resolu"){
+        if (p.pariGagnantId === b.id) rowClass = "winner";
+        else rowClass = "loser";
+      }
+      return `
+        <tr class="${rowClass}">
+          <td>${escapeHtml(b.selection)}</td>
+          <td>${formatDateFR(b.date)}</td>
+          <td class="num">${fmtEUR(b.montant)}</td>
+          <td class="num">${b.quote}%</td>
+          <td class="num">${fmtEUR(gainPotentiel(b))}</td>
+          ${p.statut === "en_cours" ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${b.id}">✕</span></td>` : "<td></td>"}
+        </tr>
+      `;
+    }).join("");
+
+    return `
+      <table>
+        <thead>
+          <tr>
+            <th>Sélection</th>
+            <th>Date</th>
+            <th style="text-align:right;">Mise</th>
+            <th style="text-align:right;">Quote</th>
+            <th style="text-align:right;">Gain si gagnant</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function renderAddPariForm(p){
+    return `
+      <form class="add-pari-form" data-add-pari="${p.id}">
+        <div>
+          <label>Sélection</label>
+          <input type="text" name="selection" placeholder="Ex. France" required />
+        </div>
+        <div>
+          <label>Date</label>
+          <input type="date" name="date" value="${todayISO()}" required />
+        </div>
+        <div>
+          <label>Montant (€)</label>
+          <input type="number" name="montant" step="0.01" min="0" placeholder="50" required />
+        </div>
+        <div>
+          <label>Quote (%)</label>
+          <input type="number" name="quote" step="0.1" min="0.1" max="99.9" placeholder="25" required />
+        </div>
+        <div class="full">
+          <button type="submit" class="btn btn-primary" style="width:100%;">Ajouter ce pari</button>
+        </div>
+      </form>
+    `;
+  }
+
+  function renderResolveBlock(p){
+    if (p.paris.length === 0) return "";
+    const options = p.paris.map(b =>
+      `<button data-resolve="${p.id}|${b.id}">${escapeHtml(b.selection)} a gagné</button>`
+    ).join("");
+    return `
+      <div class="resolve-block">
+        <div class="title">Résoudre le projet</div>
+        <div class="resolve-options">
+          ${options}
+          <button class="none-option" data-resolve="${p.id}|NONE">Aucune de ces issues</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderResultSummary(p, result){
+    const gainNetClass = result.gainNet > 0 ? "pos" : (result.gainNet < 0 ? "neg" : "");
+    const rentClass = result.rentabilite > 0 ? "pos" : (result.rentabilite < 0 ? "neg" : "");
+    return `
+      <div class="result-summary">
+        <div>
+          <div class="label">Gain net</div>
+          <div class="value ${gainNetClass}">${fmtEUR(result.gainNet)}</div>
+        </div>
+        <div>
+          <div class="label">Rentabilité</div>
+          <div class="value ${rentClass}">${fmtPct(result.rentabilite)}</div>
+        </div>
+      </div>
+      <div class="reopen">
+        <button class="btn btn-ghost" data-reopen="${p.id}">Rouvrir le projet</button>
+      </div>
+    `;
+  }
+
+  function formatDateFR(iso){
+    const d = new Date(iso + "T00:00:00");
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString("fr-FR", { day:"2-digit", month:"2-digit", year:"2-digit" });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  function attachProjectEvents(){
+    document.querySelectorAll("[data-toggle]").forEach(el => {
+      el.addEventListener("click", () => {
+        const id = el.getAttribute("data-toggle");
+        openProjectId = (openProjectId === id) ? null : id;
+        render();
+      });
+    });
+
+    document.querySelectorAll("[data-add-pari]").forEach(form => {
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const projetId = form.getAttribute("data-add-pari");
+        const fd = new FormData(form);
+        const pari = {
+          id: uid(),
+          selection: fd.get("selection").toString().trim(),
+          date: fd.get("date").toString(),
+          montant: parseFloat(fd.get("montant")),
+          quote: parseFloat(fd.get("quote"))
+        };
+        if (!pari.selection || isNaN(pari.montant) || isNaN(pari.quote)) return;
+        const p = projets.find(pr => pr.id === projetId);
+        p.paris.push(pari);
+        save();
+        render();
+      });
+    });
+
+    document.querySelectorAll("[data-del-pari]").forEach(el => {
+      el.addEventListener("click", () => {
+        const [projetId, pariId] = el.getAttribute("data-del-pari").split("|");
+        const p = projets.find(pr => pr.id === projetId);
+        p.paris = p.paris.filter(b => b.id !== pariId);
+        save();
+        render();
+      });
+    });
+
+    document.querySelectorAll("[data-resolve]").forEach(el => {
+      el.addEventListener("click", () => {
+        const [projetId, pariId] = el.getAttribute("data-resolve").split("|");
+        const p = projets.find(pr => pr.id === projetId);
+        p.statut = "resolu";
+        p.pariGagnantId = pariId;
+        save();
+        render();
+      });
+    });
+
+    document.querySelectorAll("[data-reopen]").forEach(el => {
+      el.addEventListener("click", () => {
+        const projetId = el.getAttribute("data-reopen");
+        const p = projets.find(pr => pr.id === projetId);
+        p.statut = "en_cours";
+        p.pariGagnantId = null;
+        save();
+        render();
+      });
+    });
+
+    document.querySelectorAll("[data-del-project]").forEach(el => {
+      el.addEventListener("click", () => {
+        const projetId = el.getAttribute("data-del-project");
+        if (!confirm("Supprimer ce projet et tous ses paris ?")) return;
+        projets = projets.filter(pr => pr.id !== projetId);
+        if (openProjectId === projetId) openProjectId = null;
+        save();
+        render();
+      });
+    });
+  }
+
+  // --- New project dialog ---
+  const dialog = document.getElementById("dialog-project");
+  function openDialog(){
+    document.getElementById("new-project-name").value = "";
+    dialog.showModal();
+    setTimeout(() => document.getElementById("new-project-name").focus(), 50);
+  }
+  document.getElementById("open-add-project").addEventListener("click", openDialog);
+  document.getElementById("empty-add-btn").addEventListener("click", openDialog);
+  document.getElementById("cancel-project").addEventListener("click", () => dialog.close());
+  document.getElementById("confirm-project").addEventListener("click", () => {
+    const name = document.getElementById("new-project-name").value.trim();
+    if (!name) return;
+    const p = { id: uid(), nom: name, paris: [], statut: "en_cours", pariGagnantId: null };
+    projets.unshift(p);
+    openProjectId = p.id;
+    save();
+    dialog.close();
+    render();
+  });
+
+  // --- Service worker registration (offline support) ---
+  if ("serviceWorker" in navigator){
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(err => console.error("SW registration failed", err));
+    });
+  }
+
+  load();
+  render();
+})();
+</script>
+
+</body>
+</html>
