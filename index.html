@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<title>Polymarket Bet Tracker</title>
+<title>Bet Tracker</title>
 
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#0B0D10" />
@@ -119,20 +119,36 @@
   .project.open .chevron{ transform: rotate(180deg); }
   .chevron{ color: var(--muted); transition: transform .15s; font-size:12px; }
 
-  table{ width:100%; border-collapse: collapse; margin-top:10px; }
-  th{
-    font-size: 10px; text-transform:uppercase; letter-spacing:.03em; color: var(--muted);
-    text-align:left; font-weight:600; padding: 6px 4px; border-bottom:1px solid var(--border);
+  .bet-card-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .bet-card{
+    background: var(--surface-2); border:1px solid var(--border); border-radius: 12px;
+    padding: 12px;
   }
-  td{
-    font-family: var(--font-num); font-size: 13px; padding: 8px 4px;
-    border-bottom:1px solid var(--border); vertical-align: middle;
+  .bet-card.winner{ border-color: rgba(61,220,132,0.4); }
+  .bet-card.loser{ opacity: 0.45; }
+  .bet-card-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .bet-card-name{ font-size:14px; font-weight:600; }
+  .bet-card-stats{
+    display:flex; flex-wrap:wrap; gap: 4px 16px; margin-top:8px;
   }
-  td.num{ text-align:right; }
-  tr.winner td{ color: var(--green); }
-  tr.loser td{ opacity: 0.45; }
+  .stat{ display:flex; flex-direction:column; }
+  .stat-label{ font-size:10px; text-transform:uppercase; letter-spacing:.03em; color: var(--muted); }
+  .stat-value{ font-family: var(--font-num); font-size:14px; margin-top:2px; }
+  .bet-card-return{ margin-top:10px; }
+  .bet-card-detail{
+    margin-top:10px; padding-top:8px; border-top:1px dashed var(--border);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .detail-line{
+    display:flex; align-items:center; justify-content:space-between;
+    font-family: var(--font-num); font-size:12px; color: var(--muted);
+  }
 
-  .del-pari{ color: var(--muted); font-size:16px; padding: 2px 6px; }
+  .del-pari{
+    color: var(--muted); font-size:16px;
+    width:32px; height:32px; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; margin: -6px -6px -6px 0;
+  }
 
   .group-count{
     display:inline-block; margin-left:6px; font-size:11px; color: var(--amber);
@@ -141,10 +157,6 @@
   .avg-tag{
     display:inline-block; margin-left:5px; font-size:9px; color: var(--muted);
     font-family: var(--font-ui); vertical-align: middle;
-  }
-  tr.detail-row td{
-    color: var(--muted); font-size:12px; background: var(--surface-2);
-    border-bottom:1px solid var(--border);
   }
 
   .return-cell{ min-width: 92px; }
@@ -172,7 +184,8 @@
   }
   .btn-primary{ background: var(--amber); color:#1a1200; }
   .btn-ghost{ background: transparent; color: var(--muted); border: 1px solid var(--border); }
-  .row-actions{ display:flex; gap:8px; margin-top:10px; }
+  .row-actions{ display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+  .row-actions button{ width:100%; }
 
   .resolve-block{
     margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border);
@@ -488,61 +501,50 @@
     }));
     const maxAbs = Math.max(0.0001, ...withReturns.map(x => Math.abs(x.rendement)));
 
-    const rows = withReturns.map(({g, gainNet, rendement}) => {
-      let rowClass = "";
+    const cards = withReturns.map(({g, gainNet, rendement}) => {
+      let stateClass = "";
       if (p.statut === "resolu"){
-        rowClass = (p.pariGagnantId === g.key) ? "winner" : "loser";
+        stateClass = (p.pariGagnantId === g.key) ? "winner" : "loser";
       }
       const isOpen = openGroups.has(p.id + "|" + g.key);
       const detail = g.paris.length > 1 ? renderGroupDetail(p, g) : "";
-      const nbLabel = g.paris.length > 1 ? `<span class="group-count" data-group-toggle="${p.id}|${g.key}">${g.paris.length} bets ▾</span>` : "";
+      const nbLabel = g.paris.length > 1 ? `<span class="group-count" data-group-toggle="${p.id}|${g.key}">${g.paris.length} bets ${isOpen ? '▴' : '▾'}</span>` : "";
       const retClass = rendement > 0 ? "pos" : (rendement < 0 ? "neg" : "");
       const barColor = rendement >= 0 ? "var(--green)" : "var(--red)";
       const barWidth = (Math.abs(rendement) / maxAbs) * 100;
+      const canDelete = p.statut === "en_cours" && g.paris.length === 1;
+
       return `
-        <tr class="${rowClass}">
-          <td>${escapeHtml(g.label)} ${nbLabel}</td>
-          <td class="num">${fmtUSD(g.montantTotal)}</td>
-          <td class="num">${g.quoteMoyenne.toFixed(1)}%${g.paris.length > 1 ? '<span class="avg-tag">avg</span>' : ''}</td>
-          <td class="num">${fmtUSD(gainNet)}</td>
-          <td class="num return-cell">
+        <div class="bet-card ${stateClass}">
+          <div class="bet-card-top">
+            <div class="bet-card-name">${escapeHtml(g.label)}${nbLabel}</div>
+            ${canDelete ? `<span class="del-pari" data-del-pari="${p.id}|${g.paris[0].id}">✕</span>` : ""}
+          </div>
+          <div class="bet-card-stats">
+            <div class="stat"><span class="stat-label">Stake</span><span class="stat-value">${fmtUSD(g.montantTotal)}</span></div>
+            <div class="stat"><span class="stat-label">Odds</span><span class="stat-value">${g.quoteMoyenne.toFixed(1)}%${g.paris.length > 1 ? '<span class="avg-tag">avg</span>' : ''}</span></div>
+            <div class="stat"><span class="stat-label">Net gain if won</span><span class="stat-value">${fmtUSD(gainNet)}</span></div>
+          </div>
+          <div class="bet-card-return">
             <div class="return-value ${retClass}">${fmtPct(rendement)}</div>
             <div class="perf-bar"><div class="perf-fill" style="width:${barWidth}%;background:${barColor};"></div></div>
-          </td>
-          ${p.statut === "en_cours" && g.paris.length === 1 ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${g.paris[0].id}">✕</span></td>` : "<td></td>"}
-        </tr>
-        ${isOpen ? detail : ""}
+          </div>
+          ${isOpen ? `<div class="bet-card-detail">${detail}</div>` : ""}
+        </div>
       `;
     }).join("");
 
-    return `
-      <table>
-        <thead>
-          <tr>
-            <th>Selection</th>
-            <th style="text-align:right;">Stake</th>
-            <th style="text-align:right;">Odds</th>
-            <th style="text-align:right;">Net gain if won</th>
-            <th style="text-align:right;">Return</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
+    return `<div class="bet-card-list">${cards}</div>`;
   }
 
   function renderGroupDetail(p, g){
-    const lines = g.paris.map(b => `
-      <tr class="detail-row">
-        <td colspan="2">${formatDate(b.date)}</td>
-        <td class="num">${fmtUSD(b.montant)}</td>
-        <td class="num">${b.quote}%</td>
-        <td></td>
-        ${p.statut === "en_cours" ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${b.id}">✕</span></td>` : "<td></td>"}
-      </tr>
+    return g.paris.map(b => `
+      <div class="detail-line">
+        <span class="detail-date">${formatDate(b.date)}</span>
+        <span class="detail-amount">${fmtUSD(b.montant)} · ${b.quote}%</span>
+        ${p.statut === "en_cours" ? `<span class="del-pari" data-del-pari="${p.id}|${b.id}">✕</span>` : "<span></span>"}
+      </div>
     `).join("");
-    return lines;
   }
 
   function renderAddPariForm(p){
