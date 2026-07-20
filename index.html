@@ -204,6 +204,25 @@
   dialog h3{ margin:0 0 14px; font-size:16px; }
   dialog .actions{ display:flex; gap:10px; margin-top:16px; }
   dialog .actions button{ flex:1; }
+
+  .split-row{
+    display:grid; grid-template-columns: 1fr 90px 28px; gap:8px; margin-bottom:8px; align-items:center;
+  }
+  .split-row input{
+    background: var(--surface-2); border:1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 9px 10px; font-size:14px; font-family: var(--font-ui); width:100%;
+  }
+  .split-row .remove-row{ color: var(--muted); font-size:16px; text-align:center; cursor:pointer; }
+  #dialog-split{ max-height: 85vh; overflow-y: auto; }
+  .split-preview-row{
+    display:flex; justify-content:space-between; font-family: var(--font-num); font-size:13px;
+    padding: 5px 0; color: var(--text);
+  }
+  .split-summary{
+    margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);
+    font-family: var(--font-num); font-size:13px; display:flex; justify-content:space-between; font-weight:700;
+  }
+  .split-warning{ font-size:12px; color: var(--red); margin-top:10px; line-height:1.4; }
 </style>
 </head>
 <body>
@@ -233,6 +252,24 @@
   <div class="actions">
     <button class="btn btn-ghost" id="cancel-project">Cancel</button>
     <button class="btn btn-primary" id="confirm-project">Create</button>
+  </div>
+</dialog>
+
+<dialog id="dialog-split">
+  <h3>Split stake by odds</h3>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+    Enter each selection with its odds. The total budget is split so every outcome pays back the same amount — a guaranteed return only exists if the odds add up to under 100%.
+  </div>
+  <div id="split-rows"></div>
+  <button type="button" class="btn btn-ghost" id="split-add-row" style="width:100%;margin-top:4px;">+ Add selection</button>
+  <div style="margin-top:14px;">
+    <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Total budget ($)</label>
+    <input id="split-total" type="number" step="0.01" min="0" placeholder="500" />
+  </div>
+  <div id="split-preview"></div>
+  <div class="actions">
+    <button class="btn btn-ghost" id="split-cancel">Cancel</button>
+    <button class="btn btn-primary" id="split-confirm" disabled>Add bets</button>
   </div>
 </dialog>
 
@@ -427,6 +464,7 @@
           ${p.statut === "en_cours" ? renderAddPariForm(p) : ""}
           ${p.statut === "en_cours" ? renderResolveBlock(p) : renderResultSummary(p, result)}
           <div class="row-actions">
+            ${p.statut === "en_cours" ? `<button class="btn btn-ghost split-btn" data-split-project="${p.id}">Split stake by odds</button>` : ""}
             <button class="btn btn-ghost del-project" data-del-project="${p.id}">Delete project</button>
           </div>
         </div>
@@ -651,6 +689,12 @@
       });
     });
 
+    document.querySelectorAll("[data-split-project]").forEach(el => {
+      el.addEventListener("click", () => {
+        openSplitDialog(el.getAttribute("data-split-project"));
+      });
+    });
+
     document.querySelectorAll("[data-del-project]").forEach(el => {
       el.addEventListener("click", () => {
         const projetId = el.getAttribute("data-del-project");
@@ -681,6 +725,120 @@
     openProjectId = p.id;
     save();
     dialog.close();
+    render();
+  });
+
+  // --- Split stake by odds (arbitrage-style allocation) ---
+  // Goal: given a set of selections with their odds and a total budget, find the stake
+  // per selection so that the payout is IDENTICAL no matter which selection wins.
+  // Math: stake_i = total * (quote_i / sum(quotes)). This makes payout_i = total * 100/sum(quotes)
+  // for every i, so the guaranteed net return is (100/sum(quotes) - 1), constant across outcomes.
+  // That return is only positive when the odds sum to under 100% — otherwise no split can
+  // guarantee a profit, and we say so rather than silently proposing one.
+  const dialogSplit = document.getElementById("dialog-split");
+  let splitProjectId = null;
+  let splitRows = [];
+
+  function openSplitDialog(projectId){
+    splitProjectId = projectId;
+    splitRows = [{selection:"", quote:""}, {selection:"", quote:""}];
+    renderSplitRows();
+    updateSplitPreview();
+    dialogSplit.showModal();
+  }
+
+  function renderSplitRows(){
+    const container = document.getElementById("split-rows");
+    container.innerHTML = splitRows.map((row, i) => `
+      <div class="split-row">
+        <input type="text" placeholder="Selection" value="${escapeHtml(row.selection)}" data-row-field="selection" data-row-index="${i}" />
+        <input type="number" step="0.1" min="0.1" max="99.9" placeholder="Odds %" value="${row.quote}" data-row-field="quote" data-row-index="${i}" />
+        <span class="remove-row" data-row-remove="${i}">${splitRows.length > 2 ? "✕" : ""}</span>
+      </div>
+    `).join("");
+
+    container.querySelectorAll("[data-row-field]").forEach(input => {
+      input.addEventListener("input", () => {
+        const idx = parseInt(input.getAttribute("data-row-index"), 10);
+        const field = input.getAttribute("data-row-field");
+        splitRows[idx][field] = field === "quote" ? input.value : input.value;
+        updateSplitPreview();
+      });
+    });
+    container.querySelectorAll("[data-row-remove]").forEach(el => {
+      el.addEventListener("click", () => {
+        if (splitRows.length <= 2) return;
+        const idx = parseInt(el.getAttribute("data-row-remove"), 10);
+        splitRows.splice(idx, 1);
+        renderSplitRows();
+        updateSplitPreview();
+      });
+    });
+  }
+
+  function updateSplitPreview(){
+    const preview = document.getElementById("split-preview");
+    const confirmBtn = document.getElementById("split-confirm");
+    const total = parseFloat(document.getElementById("split-total").value);
+
+    const validRows = splitRows
+      .map(r => ({ selection: r.selection.trim(), quote: parseFloat(r.quote) }))
+      .filter(r => r.selection && !isNaN(r.quote) && r.quote > 0);
+
+    if (validRows.length < 2 || validRows.length !== splitRows.length || isNaN(total) || total <= 0){
+      preview.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-top:12px;">Fill in a selection and odds for every row, plus a total budget, to see the split.</div>`;
+      confirmBtn.disabled = true;
+      return;
+    }
+
+    const sumQuotes = validRows.reduce((s, r) => s + r.quote, 0);
+
+    if (sumQuotes >= 100){
+      preview.innerHTML = `<div class="split-warning">These odds sum to ${sumQuotes.toFixed(1)}% — at or above 100%, no split of this budget can guarantee a positive return on every outcome. Lower the odds or pick a different market to get a guaranteed profit.</div>`;
+      confirmBtn.disabled = true;
+      return;
+    }
+
+    const guaranteedReturn = 100 / sumQuotes - 1;
+    const rows = validRows.map(r => {
+      const stake = total * (r.quote / sumQuotes);
+      return `<div class="split-preview-row"><span>${escapeHtml(r.selection)}</span><span>${fmtUSD(stake)}</span></div>`;
+    }).join("");
+
+    preview.innerHTML = `
+      ${rows}
+      <div class="split-summary">
+        <span>Guaranteed return</span>
+        <span style="color:var(--green);">${fmtPct(guaranteedReturn)}</span>
+      </div>
+    `;
+    confirmBtn.disabled = false;
+  }
+
+  document.getElementById("split-add-row").addEventListener("click", () => {
+    splitRows.push({selection:"", quote:""});
+    renderSplitRows();
+    updateSplitPreview();
+  });
+  document.getElementById("split-total").addEventListener("input", updateSplitPreview);
+  document.getElementById("split-cancel").addEventListener("click", () => dialogSplit.close());
+  document.getElementById("split-confirm").addEventListener("click", () => {
+    const total = parseFloat(document.getElementById("split-total").value);
+    const validRows = splitRows
+      .map(r => ({ selection: r.selection.trim(), quote: parseFloat(r.quote) }))
+      .filter(r => r.selection && !isNaN(r.quote) && r.quote > 0);
+    const sumQuotes = validRows.reduce((s, r) => s + r.quote, 0);
+    if (validRows.length < 2 || isNaN(total) || total <= 0 || sumQuotes >= 100) return;
+
+    const p = projets.find(pr => pr.id === splitProjectId);
+    if (!p) return;
+    validRows.forEach(r => {
+      const stake = Math.round(total * (r.quote / sumQuotes) * 100) / 100;
+      p.paris.push({ id: uid(), selection: r.selection, date: todayISO(), montant: stake, quote: r.quote });
+    });
+    save();
+    openProjectId = p.id;
+    dialogSplit.close();
     render();
   });
 
