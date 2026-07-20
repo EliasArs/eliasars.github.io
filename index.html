@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<title>Paris Polymarket</title>
+<title>Polymarket Bet Tracker</title>
 
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#0B0D10" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Paris" />
+<meta name="apple-mobile-web-app-title" content="Bets" />
 <link rel="apple-touch-icon" href="icon-180.png" />
 
 <style>
@@ -96,15 +96,23 @@
     font-size: 11px; font-weight:600; padding: 4px 9px; border-radius: 999px;
     font-family: var(--font-num); white-space:nowrap;
   }
-  .badge.encours{ background: rgba(245,185,66,0.14); color: var(--amber); }
-  .badge.gagne{ background: rgba(61,220,132,0.14); color: var(--green); }
-  .badge.perdu{ background: rgba(255,93,93,0.14); color: var(--red); }
+  .badge.open-status{ background: rgba(245,185,66,0.14); color: var(--amber); }
+  .badge.won{ background: rgba(61,220,132,0.14); color: var(--green); }
+  .badge.lost{ background: rgba(255,93,93,0.14); color: var(--red); }
 
   .stakebar{
     display:flex; height:6px; margin: 0 16px 14px; border-radius: 4px; overflow:hidden;
     background: var(--surface-2);
   }
   .stakebar div{ height:100%; }
+  .legend{
+    display:flex; flex-wrap:wrap; gap:10px; margin: -6px 16px 14px;
+  }
+  .legend .item{
+    display:flex; align-items:center; gap:5px; font-size:11px; color: var(--muted);
+    font-family: var(--font-num);
+  }
+  .legend .swatch{ width:8px; height:8px; border-radius:2px; display:inline-block; }
 
   .project-body{ border-top:1px solid var(--border); padding: 4px 16px 16px; display:none; }
   .project.open .project-body{ display:block; }
@@ -138,6 +146,16 @@
     color: var(--muted); font-size:12px; background: var(--surface-2);
     border-bottom:1px solid var(--border);
   }
+
+  .return-cell{ min-width: 92px; }
+  .return-value{ font-weight:600; }
+  .return-value.pos{ color: var(--green); }
+  .return-value.neg{ color: var(--red); }
+  .perf-bar{
+    height:4px; margin-top:5px; border-radius:3px; background: var(--surface-2);
+    overflow:hidden; display:flex; justify-content:flex-end;
+  }
+  .perf-fill{ height:100%; border-radius:3px; }
 
   .add-pari-form{
     display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:14px;
@@ -192,8 +210,8 @@
 
 <header>
   <div>
-    <h1>Paris</h1>
-    <div class="sub" id="header-sub">0 projet</div>
+    <h1>Bets</h1>
+    <div class="sub" id="header-sub">0 projects</div>
   </div>
   <button class="add-btn" id="open-add-project">+</button>
 </header>
@@ -203,18 +221,18 @@
   <div id="project-list"></div>
   <div class="empty" id="empty-state" style="display:none;">
     <div class="glyph">◇</div>
-    <div>Aucun projet pour l'instant.</div>
-    <button id="empty-add-btn">Créer un projet</button>
+    <div>No projects yet.</div>
+    <button id="empty-add-btn">Create project</button>
   </div>
 </main>
 
 <dialog id="dialog-project">
-  <h3>Nouveau projet</h3>
-  <label style="font-size:11px;color:var(--muted);">Nom du projet</label>
-  <input class="proj-name" id="new-project-name" type="text" placeholder="Ex. Vainqueur Coupe du monde" />
+  <h3>New project</h3>
+  <label style="font-size:11px;color:var(--muted);">Project name</label>
+  <input class="proj-name" id="new-project-name" type="text" placeholder="e.g. World Cup winner" />
   <div class="actions">
-    <button class="btn btn-ghost" id="cancel-project">Annuler</button>
-    <button class="btn btn-primary" id="confirm-project">Créer</button>
+    <button class="btn btn-ghost" id="cancel-project">Cancel</button>
+    <button class="btn btn-primary" id="confirm-project">Create</button>
   </div>
 </dialog>
 
@@ -230,7 +248,7 @@
   /** @type {Projet[]} */
   let projets = [];
   let openProjectId = null;
-  // Clés "projetId|selectionKey" des groupes actuellement dépliés (état d'affichage, non persisté)
+  // Keys "projectId|selectionKey" for currently expanded groups (display state only, not persisted)
   let openGroups = new Set();
 
   function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -241,7 +259,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       projets = raw ? JSON.parse(raw) : [];
     }catch(e){
-      console.error("Lecture des données impossible", e);
+      console.error("Could not read stored data", e);
       projets = [];
     }
   }
@@ -249,8 +267,8 @@
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(projets));
     }catch(e){
-      console.error("Sauvegarde impossible", e);
-      alert("Impossible de sauvegarder les données sur cet appareil.");
+      console.error("Could not save data", e);
+      alert("Unable to save data on this device.");
     }
   }
 
@@ -262,10 +280,10 @@
     return s.trim().toLowerCase();
   }
 
-  // Regroupe les paris d'un même projet par sélection (nom identique, insensible à la casse).
-  // La quote affichée est une moyenne pondérée par la mise de chaque pari sur cette sélection.
-  // Hypothèse : la moyenne pondérée par la mise reflète mieux le "prix de revient" de la position
-  // qu'une simple moyenne arithmétique des quotes. À valider si ce n'est pas ce que tu veux.
+  // Groups a project's bets by selection (same name, case-insensitive).
+  // The displayed odds are a stake-weighted average across all bets on that selection.
+  // Assumption: a stake-weighted average reflects the position's real "cost basis" better
+  // than a plain arithmetic mean of the odds. Flag it if that's not what you want.
   function aggregateBySelection(paris){
     const groups = {};
     paris.forEach(b => {
@@ -286,7 +304,7 @@
     }));
   }
 
-  // Gain net SI cette sélection gagne et que toutes les autres sélections du projet perdent.
+  // Net gain IF this selection wins and every other selection in the project loses.
   function gainNetSiGagnant(group, miseTotaleProjet){
     if (!group.quoteMoyenne) return -miseTotaleProjet;
     const gainBrut = group.montantTotal * (100 / group.quoteMoyenne - 1);
@@ -313,17 +331,17 @@
   }
   function fmtPct(n){
     const sign = n > 0 ? "+" : "";
-    return sign + (n*100).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " %";
+    return sign + (n*100).toLocaleString("en-US", { maximumFractionDigits: 1 }) + "%";
   }
 
-  const STAKE_COLORS = ["#F5B942", "#3DDC84", "#7C9EFF", "#FF5D5D", "#C084FC", "#4FD1C5"];
+  const STAKE_COLORS = ["#F5B942", "#3DDC84", "#7C9EFF", "#FF5D5D", "#C084FC", "#4FD1C5", "#F472B6", "#38BDF8"];
 
   function render(){
     const list = document.getElementById("project-list");
     const empty = document.getElementById("empty-state");
     const headerSub = document.getElementById("header-sub");
 
-    headerSub.textContent = projets.length + (projets.length > 1 ? " projets" : " projet");
+    headerSub.textContent = projets.length + (projets.length === 1 ? " project" : " projects");
 
     if (projets.length === 0){
       list.innerHTML = "";
@@ -353,15 +371,15 @@
 
     summary.innerHTML = `
       <div class="cell">
-        <div class="label">Engagé</div>
+        <div class="label">Staked</div>
         <div class="value">${fmtUSD(totalEngage)}</div>
       </div>
       <div class="cell">
-        <div class="label">Gain net réalisé</div>
+        <div class="label">Net gain (settled)</div>
         <div class="value" style="color:${totalGainNet > 0 ? 'var(--green)' : (totalGainNet < 0 ? 'var(--red)' : 'var(--text)')}">${fmtUSD(totalGainNet)}</div>
       </div>
       <div class="cell">
-        <div class="label">Rentabilité</div>
+        <div class="label">Return</div>
         <div class="value" style="color:${rentGlobale === null ? 'var(--muted)' : (rentGlobale > 0 ? 'var(--green)' : (rentGlobale < 0 ? 'var(--red)' : 'var(--text)'))}">${rentGlobale === null ? '—' : fmtPct(rentGlobale)}</div>
       </div>
     `;
@@ -371,17 +389,23 @@
     const total = miseTotale(p);
     const isOpen = p.id === openProjectId;
     const result = resultatProjet(p);
+    const groups = aggregateBySelection(p.paris);
 
     let badge;
-    if (p.statut === "en_cours") badge = `<span class="badge encours">En cours</span>`;
-    else if (result.gainNet > 0) badge = `<span class="badge gagne">Gagné</span>`;
-    else badge = `<span class="badge perdu">Perdu</span>`;
+    if (p.statut === "en_cours") badge = `<span class="badge open-status">Open</span>`;
+    else if (result.gainNet > 0) badge = `<span class="badge won">Won</span>`;
+    else badge = `<span class="badge lost">Lost</span>`;
 
-    // stake bar
-    const stakebar = total > 0 ? `<div class="stakebar">` + p.paris.map((b,i) => {
-      const pct = (b.montant / total) * 100;
+    // Stake bar: one color segment per distinct selection, width proportional to its total stake.
+    const stakebar = total > 0 ? `<div class="stakebar">` + groups.map((g,i) => {
+      const pct = (g.montantTotal / total) * 100;
       const color = STAKE_COLORS[i % STAKE_COLORS.length];
       return `<div style="width:${pct}%;background:${color};"></div>`;
+    }).join("") + `</div>` : "";
+
+    const legend = groups.length > 1 ? `<div class="legend">` + groups.map((g,i) => {
+      const color = STAKE_COLORS[i % STAKE_COLORS.length];
+      return `<span class="item"><span class="swatch" style="background:${color};"></span>${escapeHtml(g.label)}</span>`;
     }).join("") + `</div>` : "";
 
     return `
@@ -389,7 +413,7 @@
         <div class="project-head" data-toggle="${p.id}">
           <div>
             <div class="name">${escapeHtml(p.nom)}</div>
-            <div class="meta">${p.paris.length} pari${p.paris.length>1?'s':''} · ${fmtUSD(total)} engagé</div>
+            <div class="meta">${p.paris.length} bet${p.paris.length!==1?'s':''} · ${fmtUSD(total)} staked</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
             ${badge}
@@ -397,12 +421,13 @@
           </div>
         </div>
         ${stakebar}
+        ${legend}
         <div class="project-body">
           ${renderParisTable(p)}
           ${p.statut === "en_cours" ? renderAddPariForm(p) : ""}
           ${p.statut === "en_cours" ? renderResolveBlock(p) : renderResultSummary(p, result)}
           <div class="row-actions">
-            <button class="btn btn-ghost del-project" data-del-project="${p.id}">Supprimer le projet</button>
+            <button class="btn btn-ghost del-project" data-del-project="${p.id}">Delete project</button>
           </div>
         </div>
       </div>
@@ -411,26 +436,41 @@
 
   function renderParisTable(p){
     if (p.paris.length === 0){
-      return `<div style="color:var(--muted);font-size:13px;padding:10px 0;">Aucun pari ajouté pour l'instant.</div>`;
+      return `<div style="color:var(--muted);font-size:13px;padding:10px 0;">No bets added yet.</div>`;
     }
     const total = miseTotale(p);
     const groups = aggregateBySelection(p.paris);
 
-    const rows = groups.map(g => {
+    // Compute each selection's return-if-won relative to the project's other bets,
+    // then scale the performance bars against the largest magnitude in this project.
+    const withReturns = groups.map(g => ({
+      g,
+      gainNet: gainNetSiGagnant(g, total),
+      rendement: total > 0 ? gainNetSiGagnant(g, total) / total : 0
+    }));
+    const maxAbs = Math.max(0.0001, ...withReturns.map(x => Math.abs(x.rendement)));
+
+    const rows = withReturns.map(({g, gainNet, rendement}) => {
       let rowClass = "";
       if (p.statut === "resolu"){
         rowClass = (p.pariGagnantId === g.key) ? "winner" : "loser";
       }
       const isOpen = openGroups.has(p.id + "|" + g.key);
-      const gainNet = gainNetSiGagnant(g, total);
       const detail = g.paris.length > 1 ? renderGroupDetail(p, g) : "";
-      const nbLabel = g.paris.length > 1 ? `<span class="group-count" data-group-toggle="${p.id}|${g.key}">${g.paris.length} paris ▾</span>` : "";
+      const nbLabel = g.paris.length > 1 ? `<span class="group-count" data-group-toggle="${p.id}|${g.key}">${g.paris.length} bets ▾</span>` : "";
+      const retClass = rendement > 0 ? "pos" : (rendement < 0 ? "neg" : "");
+      const barColor = rendement >= 0 ? "var(--green)" : "var(--red)";
+      const barWidth = (Math.abs(rendement) / maxAbs) * 100;
       return `
         <tr class="${rowClass}">
           <td>${escapeHtml(g.label)} ${nbLabel}</td>
           <td class="num">${fmtUSD(g.montantTotal)}</td>
-          <td class="num">${g.quoteMoyenne.toFixed(1)}%${g.paris.length > 1 ? '<span class="avg-tag">moy.</span>' : ''}</td>
+          <td class="num">${g.quoteMoyenne.toFixed(1)}%${g.paris.length > 1 ? '<span class="avg-tag">avg</span>' : ''}</td>
           <td class="num">${fmtUSD(gainNet)}</td>
+          <td class="num return-cell">
+            <div class="return-value ${retClass}">${fmtPct(rendement)}</div>
+            <div class="perf-bar"><div class="perf-fill" style="width:${barWidth}%;background:${barColor};"></div></div>
+          </td>
           ${p.statut === "en_cours" && g.paris.length === 1 ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${g.paris[0].id}">✕</span></td>` : "<td></td>"}
         </tr>
         ${isOpen ? detail : ""}
@@ -441,10 +481,11 @@
       <table>
         <thead>
           <tr>
-            <th>Sélection</th>
-            <th style="text-align:right;">Mise totale</th>
-            <th style="text-align:right;">Quote</th>
-            <th style="text-align:right;">Gain net si gagnant</th>
+            <th>Selection</th>
+            <th style="text-align:right;">Stake</th>
+            <th style="text-align:right;">Odds</th>
+            <th style="text-align:right;">Net gain if won</th>
+            <th style="text-align:right;">Return</th>
             <th></th>
           </tr>
         </thead>
@@ -456,9 +497,10 @@
   function renderGroupDetail(p, g){
     const lines = g.paris.map(b => `
       <tr class="detail-row">
-        <td colspan="2">${formatDateFR(b.date)}</td>
+        <td colspan="2">${formatDate(b.date)}</td>
         <td class="num">${fmtUSD(b.montant)}</td>
         <td class="num">${b.quote}%</td>
+        <td></td>
         ${p.statut === "en_cours" ? `<td class="num"><span class="del-pari" data-del-pari="${p.id}|${b.id}">✕</span></td>` : "<td></td>"}
       </tr>
     `).join("");
@@ -469,23 +511,23 @@
     return `
       <form class="add-pari-form" data-add-pari="${p.id}">
         <div>
-          <label>Sélection</label>
-          <input type="text" name="selection" placeholder="Ex. France" required />
+          <label>Selection</label>
+          <input type="text" name="selection" placeholder="e.g. France" required />
         </div>
         <div>
           <label>Date</label>
           <input type="date" name="date" value="${todayISO()}" required />
         </div>
         <div>
-          <label>Montant ($)</label>
+          <label>Amount ($)</label>
           <input type="number" name="montant" step="0.01" min="0" placeholder="50" required />
         </div>
         <div>
-          <label>Quote (%)</label>
+          <label>Odds (%)</label>
           <input type="number" name="quote" step="0.1" min="0.1" max="99.9" placeholder="25" required />
         </div>
         <div class="full">
-          <button type="submit" class="btn btn-primary" style="width:100%;">Ajouter ce pari</button>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Add bet</button>
         </div>
       </form>
     `;
@@ -495,14 +537,14 @@
     if (p.paris.length === 0) return "";
     const groups = aggregateBySelection(p.paris);
     const options = groups.map(g =>
-      `<button data-resolve="${p.id}|${g.key}">${escapeHtml(g.label)} a gagné</button>`
+      `<button data-resolve="${p.id}|${g.key}">${escapeHtml(g.label)} won</button>`
     ).join("");
     return `
       <div class="resolve-block">
-        <div class="title">Résoudre le projet</div>
+        <div class="title">Resolve project</div>
         <div class="resolve-options">
           ${options}
-          <button class="none-option" data-resolve="${p.id}|NONE">Aucune de ces issues</button>
+          <button class="none-option" data-resolve="${p.id}|NONE">None of these</button>
         </div>
       </div>
     `;
@@ -514,24 +556,24 @@
     return `
       <div class="result-summary">
         <div>
-          <div class="label">Gain net</div>
+          <div class="label">Net gain</div>
           <div class="value ${gainNetClass}">${fmtUSD(result.gainNet)}</div>
         </div>
         <div>
-          <div class="label">Rentabilité</div>
+          <div class="label">Return</div>
           <div class="value ${rentClass}">${fmtPct(result.rentabilite)}</div>
         </div>
       </div>
       <div class="reopen">
-        <button class="btn btn-ghost" data-reopen="${p.id}">Rouvrir le projet</button>
+        <button class="btn btn-ghost" data-reopen="${p.id}">Reopen project</button>
       </div>
     `;
   }
 
-  function formatDateFR(iso){
+  function formatDate(iso){
     const d = new Date(iso + "T00:00:00");
     if (isNaN(d)) return iso;
-    return d.toLocaleDateString("fr-FR", { day:"2-digit", month:"2-digit", year:"2-digit" });
+    return d.toLocaleDateString("en-GB", { day:"2-digit", month:"2-digit", year:"2-digit" });
   }
 
   function escapeHtml(s){
@@ -612,7 +654,7 @@
     document.querySelectorAll("[data-del-project]").forEach(el => {
       el.addEventListener("click", () => {
         const projetId = el.getAttribute("data-del-project");
-        if (!confirm("Supprimer ce projet et tous ses paris ?")) return;
+        if (!confirm("Delete this project and all its bets?")) return;
         projets = projets.filter(pr => pr.id !== projetId);
         if (openProjectId === projetId) openProjectId = null;
         save();
